@@ -322,15 +322,28 @@ REGRAS OBRIGATÓRIAS:
 
     contentsParts.push({ text: promptText });
 
-    // Call Gemini API using gemini-3.6-flash
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: { parts: contentsParts },
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.4,
-      },
-    });
+    // Call Gemini API using gemini-2.5-flash
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: contentsParts },
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.4,
+        },
+      });
+    } catch (modelErr) {
+      console.warn('Fallback to gemini-2.0-flash due to error:', modelErr);
+      response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: { parts: contentsParts },
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.4,
+        },
+      });
+    }
 
     const responseText = response.text || '';
     
@@ -449,14 +462,27 @@ ${contextPrompt || 'Material de estudo geral.'}
       parts: [{ text: userMessage }],
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: historyParts,
-      config: {
-        systemInstruction,
-        temperature: 0.5,
-      },
-    });
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: historyParts,
+        config: {
+          systemInstruction,
+          temperature: 0.5,
+        },
+      });
+    } catch (chatErr) {
+      console.warn('Fallback to gemini-2.0-flash for chat:', chatErr);
+      response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: historyParts,
+        config: {
+          systemInstruction,
+          temperature: 0.5,
+        },
+      });
+    }
 
     const responseText = response.text || 'Desculpe, não consegui processar sua dúvida neste momento.';
 
