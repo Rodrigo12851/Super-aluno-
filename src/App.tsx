@@ -27,9 +27,9 @@ export default function App() {
   const [sessions, setSessions] = useState<StudySession[]>(() => {
     try {
       const saved = localStorage.getItem('super_aluno_sessions');
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
@@ -40,12 +40,12 @@ export default function App() {
   });
 
   const [activeSession, setActiveSession] = useState<StudySession | null>(() => {
-    return sessions.length > 0 ? sessions[0] : SAMPLE_STUDY_SESSIONS[0];
+    return sessions.length > 0 ? sessions[0] : null;
   });
 
   const [activeTab, setActiveTab] = useState<
     'upload' | 'summary' | 'flashcards' | 'quiz' | 'tutor' | 'plan'
-  >('summary');
+  >(() => (sessions.length > 0 ? 'summary' : 'upload'));
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
@@ -62,30 +62,30 @@ export default function App() {
     if (!user) return;
 
     const unsubscribe = subscribeToUserStudies(user.uid, (remoteSessions) => {
-      if (remoteSessions && remoteSessions.length > 0) {
+      if (remoteSessions) {
         setSessions(remoteSessions);
-        // If current active session is null or updated remotely, update active session
         setActiveSession((prev) => {
-          if (!prev) return remoteSessions[0];
+          if (!prev) return remoteSessions[0] || null;
           const matched = remoteSessions.find((s) => s.id === prev.id);
-          return matched || remoteSessions[0];
+          return matched || remoteSessions[0] || null;
         });
+        if (remoteSessions.length === 0) {
+          setActiveTab('upload');
+        }
       }
     });
 
     return () => unsubscribe();
   }, [user]);
 
-  // Sync to localStorage for local guest state
+  // Sync to localStorage for local state
   useEffect(() => {
-    if (!user) {
-      try {
-        localStorage.setItem('super_aluno_sessions', JSON.stringify(sessions));
-      } catch (e) {
-        console.error('Failed to save sessions to localStorage', e);
-      }
+    try {
+      localStorage.setItem('super_aluno_sessions', JSON.stringify(sessions));
+    } catch (e) {
+      console.error('Failed to save sessions to localStorage', e);
     }
-  }, [sessions, user]);
+  }, [sessions]);
 
   const handleSessionCreated = async (newSession: StudySession) => {
     const updated = [newSession, ...sessions];

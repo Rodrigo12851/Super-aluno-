@@ -143,6 +143,30 @@ async function getYouTubeTranscriptAndInfo(youtubeUrlOrId: string) {
   };
 }
 
+// Helper function for calling Gemini with model fallback cascade
+async function generateContentWithFallback(ai: GoogleGenAI, requestParams: any) {
+  const modelsToTry = [
+    'gemini-3.6-flash',
+    'gemini-2.0-flash',
+  ];
+  let lastError: any = null;
+
+  for (const modelName of modelsToTry) {
+    try {
+      const response = await ai.models.generateContent({
+        ...requestParams,
+        model: modelName,
+      });
+      if (response && response.text) return response;
+    } catch (err: any) {
+      console.warn(`Gemini model '${modelName}' attempt notice:`, err?.message || err);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Não foi possível obter resposta dos modelos Gemini.');
+}
+
 // Helper to wrap raw 16-bit mono PCM bytes into a valid WAV file Buffer
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitDepth = 16): Buffer {
   const header = Buffer.alloc(44);
@@ -373,26 +397,26 @@ REGRAS OBRIGATÓRIAS:
 
     contentsParts.push({ text: promptText });
 
-    // Call Gemini API using gemini-3.6-flash
+    // Call Gemini API with model fallback cascade
     let response;
     try {
-      response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+      response = await generateContentWithFallback(ai, {
         contents: { parts: contentsParts },
         config: {
           responseMimeType: 'application/json',
           temperature: 0.4,
         },
       });
-    } catch (modelErr) {
-      console.warn('Fallback to gemini-flash-latest due to error:', modelErr);
-      response = await ai.models.generateContent({
-        model: 'gemini-flash-latest',
-        contents: { parts: contentsParts },
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0.4,
-        },
+    } catch (modelErr: any) {
+      console.error('Gemini generateContent error in process-study:', modelErr);
+      const errStr = modelErr?.message || '';
+      if (errStr.includes('429') || errStr.includes('RESOURCE_EXHAUSTED')) {
+        return res.status(429).json({
+          error: 'O serviço de IA está temporariamente com alto tráfego (cota por minuto atingida). Por favor, aguarde de 15 a 30 segundos e tente gerar novamente.',
+        });
+      }
+      return res.status(500).json({
+        error: 'Não foi possível gerar o kit de estudos pela IA. Verifique se o conteúdo ou vídeo enviado é válido e tente novamente.',
       });
     }
 
@@ -515,23 +539,17 @@ ${contextPrompt || 'Material de estudo geral.'}
 
     let response;
     try {
-      response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
+      response = await generateContentWithFallback(ai, {
         contents: historyParts,
         config: {
           systemInstruction,
           temperature: 0.5,
         },
       });
-    } catch (chatErr) {
-      console.warn('Fallback to gemini-flash-latest for chat:', chatErr);
-      response = await ai.models.generateContent({
-        model: 'gemini-flash-latest',
-        contents: historyParts,
-        config: {
-          systemInstruction,
-          temperature: 0.5,
-        },
+    } catch (chatErr: any) {
+      console.error('Error in chat-material:', chatErr);
+      return res.status(500).json({
+        error: 'Não foi possível obter resposta do tutor IA no momento. Tente novamente em alguns instantes.',
       });
     }
 
