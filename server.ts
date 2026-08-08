@@ -12,32 +12,76 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // Helper to extract YouTube video ID
+// Helper to extract YouTube video ID from any valid YouTube URL format
 function extractYouTubeVideoId(url: string): string | null {
   if (!url) return null;
   const trimmed = url.trim();
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  if (!trimmed) return null;
+
+  // Standard regex matching YouTube ID patterns (watch?v=, shorts/, live/, embed/, youtu.be/, etc.)
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|live\/|watch\?v=|\&v=)([^#\&\?\s\/]*).*/;
   const match = trimmed.match(regExp);
   if (match && match[2] && match[2].length === 11) {
     return match[2];
   }
-  if (trimmed.length === 11 && !trimmed.includes('/') && !trimmed.includes('.')) {
+
+  // Fallback URL parsing
+  try {
+    const urlObj = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    if (urlObj.hostname.includes('youtube.com') || urlObj.hostname.includes('youtu.be')) {
+      const v = urlObj.searchParams.get('v');
+      if (v && v.length === 11) return v;
+
+      const pathParts = urlObj.pathname.split('/').filter(Boolean);
+      for (const part of pathParts) {
+        if (part.length === 11 && !part.includes('.')) {
+          return part;
+        }
+      }
+    }
+  } catch {}
+
+  // Direct 11-char ID
+  if (trimmed.length === 11 && !trimmed.includes('/') && !trimmed.includes('.') && !trimmed.includes(' ')) {
     return trimmed;
   }
+
   return null;
 }
 
-// Fetch YouTube Transcript and Video Metadata
+// Fetch YouTube Transcript and Video Metadata (oEmbed + YoutubeTranscript)
 async function getYouTubeTranscriptAndInfo(youtubeUrlOrId: string) {
   const videoId = extractYouTubeVideoId(youtubeUrlOrId);
   if (!videoId) {
-    throw new Error('URL ou ID do vídeo do YouTube inválido.');
+    throw new Error('URL do vídeo do YouTube inválida. Verifique se o link está correto (ex: https://www.youtube.com/watch?v=...).');
   }
 
   let videoTitle = `Aula do YouTube (${videoId})`;
+  let channelName = '';
+  let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   let transcriptText = '';
   let hasCaption = false;
 
-  // 1. Try fetching transcript in Portuguese or default language
+  // 1. Fetch Official YouTube oEmbed metadata for accurate title, channel and thumbnail
+  try {
+    const oembedRes = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+    if (oembedRes.ok) {
+      const oembedData = await oembedRes.json() as any;
+      if (oembedData && oembedData.title) {
+        videoTitle = oembedData.title;
+      }
+      if (oembedData && oembedData.author_name) {
+        channelName = oembedData.author_name;
+      }
+      if (oembedData && oembedData.thumbnail_url) {
+        thumbnailUrl = oembedData.thumbnail_url;
+      }
+    }
+  } catch (oembedErr) {
+    console.warn('Could not fetch oEmbed metadata:', oembedErr);
+  }
+
+  // 2. Fetch transcript via YoutubeTranscript
   try {
     let transcriptItems: any[] | null = null;
     try {
@@ -61,31 +105,38 @@ async function getYouTubeTranscriptAndInfo(youtubeUrlOrId: string) {
       }).join('\n');
     }
   } catch (err) {
-    // Quiet catch
+    console.warn('Transcript notice for video ID:', videoId);
   }
 
-  // 2. Try fetching video page title from YouTube metadata
-  try {
-    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
+  // 3. Page title check fallback if title still default
+  if (videoTitle.startsWith('Aula do YouTube')) {
+    try {
+      const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
+        }
+      });
+      if (pageRes.ok) {
+        const html = await pageRes.text();
+        const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="(.*?)"/i) || html.match(/<title>(.*?)<\/title>/i);
+        if (ogTitleMatch && ogTitleMatch[1]) {
+          const cleanTitle = ogTitleMatch[1].replace('- YouTube', '').trim();
+          if (cleanTitle && cleanTitle !== 'YouTube') {
+            videoTitle = cleanTitle;
+          }
+        }
       }
-    });
-    if (pageRes.ok) {
-      const html = await pageRes.text();
-      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-      if (titleMatch && titleMatch[1]) {
-        videoTitle = titleMatch[1].replace('- YouTube', '').trim();
-      }
+    } catch (metaErr) {
+      console.warn('Could not fetch YouTube video HTML title:', metaErr);
     }
-  } catch (metaErr) {
-    console.warn('Could not fetch YouTube video title:', metaErr);
   }
 
   return {
     videoId,
     videoTitle,
+    channelName,
+    thumbnailUrl,
     transcriptText,
     hasCaption,
     youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`

@@ -49,6 +49,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const [fetchingYtInfo, setFetchingYtInfo] = useState(false);
   const [ytInfo, setYtInfo] = useState<{
     videoTitle?: string;
+    channelName?: string;
+    thumbnailUrl?: string;
     hasCaption?: boolean;
     transcriptText?: string;
   } | null>(null);
@@ -88,6 +90,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       if (res.ok && data.info) {
         setYtInfo({
           videoTitle: data.info.videoTitle,
+          channelName: data.info.channelName,
+          thumbnailUrl: data.info.thumbnailUrl,
           hasCaption: data.info.hasCaption,
           transcriptText: data.info.transcriptText,
         });
@@ -426,26 +430,44 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
               {/* YouTube Status Badge */}
               {ytInfo && (
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 animate-fadeIn">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-800 truncate">
-                      {ytInfo.videoTitle}
-                    </span>
-                    {ytInfo.hasCaption ? (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Transcrição Pronta
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
-                        Sem legendas públicas
-                      </span>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 animate-fadeIn">
+                  <div className="flex items-start gap-3">
+                    {ytInfo.thumbnailUrl && (
+                      <img
+                        src={ytInfo.thumbnailUrl}
+                        alt={ytInfo.videoTitle}
+                        referrerPolicy="no-referrer"
+                        className="w-24 h-16 object-cover rounded-lg border border-slate-200 shrink-0 shadow-xs"
+                      />
                     )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="text-xs font-bold text-slate-900 line-clamp-2">
+                          {ytInfo.videoTitle}
+                        </h4>
+                        {ytInfo.hasCaption ? (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Transcrição Pronta
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
+                            Sem legendas públicas
+                          </span>
+                        )}
+                      </div>
+                      {ytInfo.channelName && (
+                        <p className="text-[11px] font-semibold text-slate-500">
+                          Canal: {ytInfo.channelName}
+                        </p>
+                      )}
+                    </div>
                   </div>
+
                   {!ytInfo.hasCaption && (
-                    <div className="text-[11px] text-slate-600 pt-1 space-y-1">
+                    <div className="text-[11px] text-slate-600 pt-1 space-y-1 border-t border-slate-200/80">
                       <p className="text-amber-800 font-medium">
-                        💡 O autor desativou as legendas públicas neste vídeo. O Super Aluno gerará o kit de estudos completo com base no tema e conteúdo da aula (<strong>{ytInfo.videoTitle}</strong>).
+                        💡 Legendas públicas desativadas pelo canal. O Super Aluno gerará o kit de estudos completo com base no tema e conteúdo da aula (<strong>{ytInfo.videoTitle}</strong>).
                       </p>
                       <p className="text-slate-500">
                         Se preferir colar a transcrição exata,{' '}
