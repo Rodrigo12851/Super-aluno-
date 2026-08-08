@@ -1,0 +1,34 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User profiles and learning preferences",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "createdAt": { "type": "string", "description": "ISO creation timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "studies": {
+      "title": "Study Sessions",
+      "description": "Saved study materials, summaries, flashcards, quizzes and progress for each user",
+      "properties": {
+        "id": { "type": "string", "description": "Study session ID" },
+        "userId": { "type": "string", "description": "Owner User ID" },
+        "title": { "type": "string", "description": "Title of the study session" },
+        "subject": { "type": "string", "description": "Subject name" },
+        "fileType": { "type": "string", "description": "File or material type" },
+        "summary": { "type": "object", "description": "Generated summary object" },
+        "flashcards": { "type": "array", "description": "Flashcards array" },
+        "quiz": { "type": "array", "description": "Quiz questions array" },
+        "completedQuizCount": { "type": "number", "description": "Number of completed quiz questions" },
+        "masteredCardsCount": { "type": "number", "description": "Number of mastered flashcards" },
+        "lastAccessedAt": { "type": "string", "description": "ISO timestamp when last opened" },
+        "createdAt": { "type": "string", "description": "ISO timestamp when created" }
+      },
+      "required": ["userId", "title"]
+    }
+  }
+}

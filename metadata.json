@@ -1,0 +1,6 @@
+{
+  "name": "Super Aluno",
+  "description": "Assistente de estudos multimodal para aulas, áudios, PDFs e notas de aula com geração automatizada de resumos, flashcards e questionários.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
