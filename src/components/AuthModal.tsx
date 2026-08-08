@@ -43,12 +43,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         onClose();
       }, 500);
     } catch (err: any) {
-      if (err.code === 'auth/configuration-not-found' || err.message?.includes('configuration-not-found')) {
-        setError('O login do Google precisa ser ativado no console do Firebase. Utilize o formulário abaixo para entrar com E-mail e Senha ou entre como Convidado.');
+      console.warn('Google login notice:', err?.code || err?.message);
+      if (
+        err.code === 'auth/configuration-not-found' ||
+        err.code === 'auth/invalid-credential' ||
+        err.message?.includes('configuration-not-found') ||
+        err.message?.includes('invalid-credential')
+      ) {
+        setError('O login do Google precisa ser ativado no console do Firebase. Crie sua conta com E-mail e Senha abaixo ou entre como Convidado.');
       } else if (err.code === 'auth/popup-closed-by-user') {
         setError('O login com Google foi cancelado.');
       } else {
-        setError(err.message || 'Erro ao entrar com Google. Por favor, utilize o cadastro por E-mail e Senha.');
+        setError('Erro ao entrar com Google. Por favor, utilize o cadastro por E-mail e Senha.');
       }
     } finally {
       setLoading(false);
@@ -65,8 +71,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         onClose();
       }, 500);
     } catch (err: any) {
-      console.error(err);
-      setError('Não foi possível entrar como convidado. Por favor, use E-mail e Senha.');
+      console.warn('Guest login notice:', err?.code || err?.message);
+      if (
+        err.code === 'auth/operation-not-allowed' ||
+        err.code === 'auth/admin-restricted-operation' ||
+        err.code === 'auth/invalid-credential'
+      ) {
+        setError('O login como convidado não está ativado no console do Firebase. Por favor, crie sua conta com E-mail e Senha abaixo.');
+      } else {
+        setError('Não foi possível entrar como convidado. Por favor, use E-mail e Senha.');
+      }
     } finally {
       setLoading(false);
     }
@@ -93,15 +107,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         onClose();
       }, 600);
     } catch (err: any) {
-      console.error(err);
+      console.warn('Auth submit notice:', err?.code || err?.message);
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError('E-mail ou senha incorretos.');
+        if (mode === 'login') {
+          setError('E-mail ou senha incorretos. Caso ainda não possua conta, mude para a aba "Criar Conta" para se cadastrar.');
+        } else {
+          setError('Credenciais inválidas. Verifique os dados digitados ou tente fazer login.');
+        }
       } else if (err.code === 'auth/email-already-in-use') {
-        setError('Este e-mail já está cadastrado. Tente fazer login.');
+        setError('Este e-mail já está cadastrado. Mude para a aba "Entrar" para fazer login.');
       } else if (err.code === 'auth/weak-password') {
         setError('A senha deve ter pelo menos 6 caracteres.');
       } else {
-        setError(err.message || 'Erro ao processar autenticação.');
+        setError('Erro ao processar autenticação. Verifique os dados e tente novamente.');
       }
     } finally {
       setLoading(false);
