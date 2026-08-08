@@ -43,7 +43,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       }, 500);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Erro ao entrar com Google. Tente novamente.');
+      if (err.code === 'auth/configuration-not-found' || err.message?.includes('configuration-not-found')) {
+        setError('O login com Google não foi ativado no Console do Firebase para este projeto. Por favor, crie sua conta ou faça login utilizando E-mail e Senha no formulário abaixo.');
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('O login com Google foi cancelado.');
+      } else {
+        setError(err.message || 'Erro ao entrar com Google. Tente novamente ou use E-mail e Senha.');
+      }
     } finally {
       setLoading(false);
     }
