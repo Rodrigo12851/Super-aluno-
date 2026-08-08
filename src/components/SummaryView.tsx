@@ -83,7 +83,13 @@ export const SummaryView: React.FC<SummaryViewProps> = ({ summary, title }) => {
         }),
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = {};
+      }
 
       if (data.success && data.audioUrl) {
         setAudioUrl(data.audioUrl);

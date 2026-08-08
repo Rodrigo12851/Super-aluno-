@@ -83,7 +83,17 @@ export const TutorChatView: React.FC<TutorChatViewProps> = ({
         }),
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        if (!res.ok) {
+          throw new Error('Servidor indisponível no momento. Tente novamente em instantes.');
+        } else {
+          throw new Error('A resposta do tutor veio em formato inválido. Tente novamente.');
+        }
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Falha ao obter resposta do tutor.');

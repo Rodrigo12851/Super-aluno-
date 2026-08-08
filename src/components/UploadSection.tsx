@@ -78,7 +78,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: urlToFetch }),
       });
-      const data = await res.json();
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = {};
+      }
       if (res.ok && data.info) {
         setYtInfo({
           videoTitle: data.info.videoTitle,
@@ -202,8 +208,19 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
       clearInterval(stageInterval);
+
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        if (!res.ok) {
+          throw new Error('Servidor indisponível no momento. Por favor, aguarde alguns instantes e tente novamente.');
+        } else {
+          throw new Error('A resposta do servidor veio em formato inesperado. Tente novamente.');
+        }
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Falha ao processar material de estudos.');
