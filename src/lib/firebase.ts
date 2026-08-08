@@ -58,7 +58,7 @@ export async function loginWithGoogle() {
     }
     return result.user;
   } catch (error: any) {
-    console.error('Error logging in with Google:', error);
+    console.warn('Google Auth notice:', error?.code || error?.message);
     throw error;
   }
 }
