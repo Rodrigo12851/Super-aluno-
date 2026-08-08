@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type, Modality } from '@google/genai';
+import { YoutubeTranscript } from 'youtube-transcript';
 
 const app = express();
 const PORT = 3000;
@@ -9,6 +10,87 @@ const PORT = 3000;
 // Increase body parser limit to support base64 audio/video/pdf uploads up to 100MB
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+// Helper to extract YouTube video ID
+function extractYouTubeVideoId(url: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = trimmed.match(regExp);
+  if (match && match[2] && match[2].length === 11) {
+    return match[2];
+  }
+  if (trimmed.length === 11 && !trimmed.includes('/') && !trimmed.includes('.')) {
+    return trimmed;
+  }
+  return null;
+}
+
+// Fetch YouTube Transcript and Video Metadata
+async function getYouTubeTranscriptAndInfo(youtubeUrlOrId: string) {
+  const videoId = extractYouTubeVideoId(youtubeUrlOrId);
+  if (!videoId) {
+    throw new Error('URL ou ID do vídeo do YouTube inválido.');
+  }
+
+  let videoTitle = `Aula do YouTube (${videoId})`;
+  let transcriptText = '';
+  let hasCaption = false;
+
+  // 1. Try fetching transcript in Portuguese or default language
+  try {
+    let transcriptItems: any[] | null = null;
+    try {
+      transcriptItems = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'pt' });
+    } catch {
+      try {
+        transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+      } catch {
+        transcriptItems = null;
+      }
+    }
+
+    if (transcriptItems && transcriptItems.length > 0) {
+      hasCaption = true;
+      transcriptText = transcriptItems.map((item) => {
+        const totalSeconds = Math.floor((item.offset || 0) / 1000);
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        const timeStr = `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}]`;
+        return `${timeStr} ${item.text}`;
+      }).join('\n');
+    }
+  } catch (err) {
+    // Quiet catch
+  }
+
+  // 2. Try fetching video page title from YouTube metadata
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7'
+      }
+    });
+    if (pageRes.ok) {
+      const html = await pageRes.text();
+      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+      if (titleMatch && titleMatch[1]) {
+        videoTitle = titleMatch[1].replace('- YouTube', '').trim();
+      }
+    }
+  } catch (metaErr) {
+    console.warn('Could not fetch YouTube video title:', metaErr);
+  }
+
+  return {
+    videoId,
+    videoTitle,
+    transcriptText,
+    hasCaption,
+    youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`
+  };
+}
 
 // Helper to wrap raw 16-bit mono PCM bytes into a valid WAV file Buffer
 function pcmToWav(pcmBuffer: Buffer, sampleRate = 24000, numChannels = 1, bitDepth = 16): Buffer {
@@ -63,16 +145,31 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'Super Aluno Backend', timestamp: new Date().toISOString() });
 });
 
+// YouTube Transcript & Info Extraction Endpoint
+app.post('/api/youtube-info', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: 'URL do vídeo do YouTube é obrigatória.' });
+    }
+    const info = await getYouTubeTranscriptAndInfo(url);
+    return res.json({ success: true, info });
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message || 'Falha ao buscar informações do vídeo do YouTube.' });
+  }
+});
+
 // Process Study Material Endpoint
 app.post('/api/process-study', async (req, res) => {
   try {
-    const {
+    let {
       title,
       fileType,
       fileName,
       fileBase64,
       mimeType,
       rawText,
+      youtubeUrl,
       target = 'geral',
       difficulty = 'medio',
       customInstructions = '',
@@ -83,6 +180,27 @@ app.post('/api/process-study', async (req, res) => {
       return res.status(400).json({
         error: 'Chave GEMINI_API_KEY não configurada no servidor. Por favor, adicione sua API Key nas configurações.',
       });
+    }
+
+    // Process YouTube link if passed as youtubeUrl or in rawText/fileType
+    const possibleYtUrl = youtubeUrl || (fileType === 'youtube' ? (title || rawText) : null) || (rawText && extractYouTubeVideoId(rawText) ? rawText : null);
+    
+    if (possibleYtUrl) {
+      try {
+        const ytInfo = await getYouTubeTranscriptAndInfo(possibleYtUrl);
+        fileType = 'youtube';
+        if (!title || title === 'Material de Estudo' || title.startsWith('http') || title === 'Aula de Estudos') {
+          title = ytInfo.videoTitle;
+        }
+        if (ytInfo.transcriptText) {
+          rawText = `AULA DO YOUTUBE - TRANSCRIÇÃO EXTRAÍDA DO VÍDEO (${ytInfo.videoTitle}):\n\n${ytInfo.transcriptText}\n\n${rawText && !rawText.includes('http') ? `Anotações extras do aluno:\n${rawText}` : ''}`;
+        } else {
+          // If YouTube captions/transcripts are disabled on YouTube for this video, fallback gracefully using the video title and topic so Gemini generates a complete study kit!
+          rawText = `AULA DO YOUTUBE (LEGENDA AUTOMÁTICA DESATIVADA NO YOUTUBE):\nTítulo da Aula: "${ytInfo.videoTitle}"\nURL do Vídeo: ${ytInfo.youtubeUrl}\n\nInstrução especial: O criador desativou as legendas públicas deste vídeo no YouTube. Como assistente de IA Super Aluno, elabore um resumo conceitual completo, aprofundado e pedagógico sobre o tema desta aula ("${ytInfo.videoTitle}"), abordando os tópicos fundamentais, alertas de prova, conceitos-chave, flashcards e simulado de fixação.\n\n${rawText && !rawText.includes('http') ? `Anotações do aluno sobre a aula:\n${rawText}` : ''}`;
+        }
+      } catch (ytErr: any) {
+        console.warn('YouTube processing notice:', ytErr);
+      }
     }
 
     const ai = getGenAI();

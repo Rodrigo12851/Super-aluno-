@@ -17,6 +17,11 @@ import {
   Type,
   Paperclip,
   Check,
+  Video,
+  Search,
+  HelpCircle,
+  ExternalLink,
+  Youtube
 } from 'lucide-react';
 import { FileType, StudyTarget, StudyDifficulty, StudySession, ProcessStudyRequest } from '../types';
 import { SAMPLE_STUDY_SESSIONS } from '../data/sampleSessions';
@@ -30,13 +35,23 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   onSessionCreated,
   onSelectSample,
 }) => {
-  const [activeTab, setActiveTab] = useState<'file' | 'text'>('file');
+  const [activeTab, setActiveTab] = useState<'youtube' | 'text' | 'file'>('youtube');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rawText, setRawText] = useState('');
   const [title, setTitle] = useState('');
   const [target, setTarget] = useState<StudyTarget>('geral');
   const [difficulty, setDifficulty] = useState<StudyDifficulty>('medio');
   const [customInstructions, setCustomInstructions] = useState('');
+  const [showYtGuide, setShowYtGuide] = useState(false);
+
+  // YouTube Info State
+  const [fetchingYtInfo, setFetchingYtInfo] = useState(false);
+  const [ytInfo, setYtInfo] = useState<{
+    videoTitle?: string;
+    hasCaption?: boolean;
+    transcriptText?: string;
+  } | null>(null);
 
   // Processing state
   const [isLoading, setIsLoading] = useState(false);
@@ -46,19 +61,48 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const stages = [
-    'Enviando arquivo e extraindo conteúdo multimodal...',
-    'Iniciando processamento em janela de contexto estendida (Gemini IA)...',
-    'Sintetizando visão geral, pontos-chave e alertas de prova...',
-    'Gerando baralho de flashcards interativos com repetição espaçada...',
-    'Construindo simulado de fixação e plano de revisão diário...',
+    'Carregando transcrição e dados da aula...',
+    'Iniciando processamento com IA Gemini (Contexto Estendido)...',
+    'Sintetizando resumo conceitual, alertas de prova e conceitos-chave...',
+    'Criando baralho de flashcards interativos para fixação...',
+    'Construindo simulado de questões e plano de estudos personalizado...',
   ];
+
+  const handleFetchYtInfo = async (urlToFetch: string) => {
+    if (!urlToFetch || urlToFetch.trim().length < 5) return;
+    try {
+      setFetchingYtInfo(true);
+      setErrorMessage(null);
+      const res = await fetch('/api/youtube-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlToFetch }),
+      });
+      const data = await res.json();
+      if (res.ok && data.info) {
+        setYtInfo({
+          videoTitle: data.info.videoTitle,
+          hasCaption: data.info.hasCaption,
+          transcriptText: data.info.transcriptText,
+        });
+        if (data.info.videoTitle && !title) {
+          setTitle(data.info.videoTitle);
+        }
+      } else {
+        setYtInfo(null);
+      }
+    } catch (e) {
+      console.error('Error fetching YT info:', e);
+    } finally {
+      setFetchingYtInfo(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
       if (!title) {
-        // Strip extension
         const cleanName = file.name.replace(/\.[^/.]+$/, '');
         setTitle(cleanName);
       }
@@ -92,20 +136,24 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     e.preventDefault();
     setErrorMessage(null);
 
+    if (activeTab === 'youtube' && !youtubeUrl.trim()) {
+      setErrorMessage('Por favor, insira o link de uma videoaula do YouTube.');
+      return;
+    }
+
     if (activeTab === 'file' && !selectedFile) {
-      setErrorMessage('Por favor, selecione um arquivo de áudio, vídeo, PDF ou imagem.');
+      setErrorMessage('Por favor, selecione um arquivo de aula (áudio, vídeo, PDF ou imagem).');
       return;
     }
 
     if (activeTab === 'text' && !rawText.trim()) {
-      setErrorMessage('Por favor, cole ou digite as anotações ou transcrição da aula.');
+      setErrorMessage('Por favor, cole a transcrição da aula, anotações do curso ou texto dos seus estudos.');
       return;
     }
 
     setIsLoading(true);
     setProgressStage(0);
 
-    // Simulate progress stage increments
     const stageInterval = setInterval(() => {
       setProgressStage((prev) => (prev < stages.length - 1 ? prev + 1 : prev));
     }, 2800);
@@ -115,16 +163,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       let mimeType: string | undefined = undefined;
       let fileType: FileType = 'text';
 
-      if (activeTab === 'file' && selectedFile) {
+      if (activeTab === 'youtube') {
+        fileType = 'youtube';
+      } else if (activeTab === 'file' && selectedFile) {
         fileType = inferFileType(selectedFile);
         mimeType = selectedFile.type;
 
-        // Convert file to base64
         fileBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
             const result = reader.result as string;
-            // Remove data URI scheme prefix (e.g., "data:video/mp4;base64,")
             const base64Clean = result.split(',')[1] || result;
             resolve(base64Clean);
           };
@@ -134,12 +182,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       }
 
       const payload: ProcessStudyRequest = {
-        title: title.trim() || selectedFile?.name || 'Anotações de Estudo',
+        title: title.trim() || ytInfo?.videoTitle || selectedFile?.name || 'Aula de Estudos',
         fileType,
         fileName: selectedFile?.name,
         fileBase64,
         mimeType,
-        rawText: activeTab === 'text' ? rawText : undefined,
+        youtubeUrl: activeTab === 'youtube' ? youtubeUrl : undefined,
+        rawText: activeTab === 'text' ? rawText : (activeTab === 'youtube' && ytInfo?.transcriptText ? ytInfo.transcriptText : undefined),
         target,
         difficulty,
         customInstructions,
@@ -164,13 +213,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     } catch (err: any) {
       clearInterval(stageInterval);
       setIsLoading(false);
-      setErrorMessage(err.message || 'Erro inesperado. Verifique sua conexão e chave de API Gemini.');
+      setErrorMessage(err.message || 'Erro inesperado ao processar aula. Tente novamente.');
     }
   };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      {/* Sleek Dashboard Metrics Grid (from Sleek Interface theme) */}
+      {/* Sleek Dashboard Metrics Grid */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs transition-all hover:shadow-md">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Horas Economizadas</p>
@@ -183,11 +232,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs transition-all hover:shadow-md">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Materiais Processados</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Aulas & Materiais Salvos</p>
           <div className="flex items-baseline justify-between mt-1">
             <p className="text-3xl font-extrabold text-slate-900 tracking-tight">84</p>
             <span className="text-[11px] text-indigo-600 font-bold bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
-              PDFs, Vídeos & Áudios
+              YouTube, Transcrições & PDFs
             </span>
           </div>
         </div>
@@ -207,14 +256,14 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold">
           <Zap className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
-          <span>Multimodal Upload & Processamento Inteligente Gemini</span>
+          <span>Suporte a Aulas do YouTube, Cursos & Transcrições Completas</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-          Envie seus materiais de estudo
+          Envie sua aula ou transcrição de estudos
         </h1>
         <p className="text-slate-600 max-w-xl mx-auto text-xs sm:text-sm">
-          Arraste vídeos de aulas, áudios de palestras, PDFs pesados ou fotos da lousa.
-          O Gemini IA analisa tudo em segundos.
+          Cole links do YouTube, transcrições do seu curso ou envie arquivos de vídeo, áudio e PDF.
+          O Gemini IA transforma sua aula em resumos, flashcards e simulados.
         </p>
       </div>
 
@@ -227,7 +276,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               Demonstração Pronta para Testar
             </span>
           </div>
-          <span className="text-[11px] text-slate-500">Escolha uma matéria pré-processada:</span>
+          <span className="text-[11px] text-slate-500">Escolha uma aula pré-processada:</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -257,7 +306,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                   {sample.summary.overview}
                 </p>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] text-indigo-600 font-bold">
-                  <span>Carregar Sessão</span>
+                  <span>Carregar Aula de Exemplo</span>
                   <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
@@ -273,17 +322,17 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           <button
             type="button"
             onClick={() => {
-              setActiveTab('file');
+              setActiveTab('youtube');
               setErrorMessage(null);
             }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-              activeTab === 'file'
-                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200'
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'youtube'
+                ? 'bg-red-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
             }`}
           >
-            <Paperclip className="w-4 h-4" />
-            <span>Upload de Arquivo (Vídeo, Áudio, PDF, Foto)</span>
+            <Youtube className="w-4 h-4 text-white" />
+            <span>Link do YouTube</span>
           </button>
 
           <button
@@ -292,19 +341,160 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               setActiveTab('text');
               setErrorMessage(null);
             }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${
               activeTab === 'text'
-                ? 'bg-white text-indigo-600 shadow-sm border border-slate-200'
+                ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
             }`}
           >
             <Type className="w-4 h-4" />
-            <span>Digitar ou Colar Anotações / Transcrição</span>
+            <span>Transcrição de Aula / Anotações</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('file');
+              setErrorMessage(null);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              activeTab === 'file'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+            }`}
+          >
+            <Paperclip className="w-4 h-4" />
+            <span>Arquivo (Vídeo, Áudio, PDF)</span>
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6">
-          {/* File Tab */}
+          {/* TAB 1: YOUTUBE LINK */}
+          {activeTab === 'youtube' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-red-50/50 border border-red-100 space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-red-900 flex items-center gap-2">
+                  <Youtube className="w-4 h-4 text-red-600 fill-red-600" />
+                  <span>Link da Videoaula no YouTube:</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={youtubeUrl}
+                    onChange={(e) => {
+                      setYoutubeUrl(e.target.value);
+                      handleFetchYtInfo(e.target.value);
+                    }}
+                    placeholder="Ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ ou https://youtu.be/..."
+                    className="flex-1 px-4 py-3 rounded-xl border border-slate-300 focus:border-red-500 focus:ring-2 focus:ring-red-200 text-sm text-slate-800 outline-none bg-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleFetchYtInfo(youtubeUrl)}
+                    disabled={fetchingYtInfo || !youtubeUrl}
+                    className="px-4 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-sm flex items-center gap-2 shrink-0 disabled:opacity-50"
+                  >
+                    {fetchingYtInfo ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    <span className="hidden sm:inline">Buscar Dados</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Insira o link de qualquer vídeo ou aula do YouTube para que nossa IA extraia a transcrição e crie seu kit de estudos.
+                </p>
+              </div>
+
+              {/* YouTube Status Badge */}
+              {ytInfo && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1 animate-fadeIn">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-800 truncate">
+                      {ytInfo.videoTitle}
+                    </span>
+                    {ytInfo.hasCaption ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Transcrição Pronta
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full shrink-0">
+                        Sem legendas públicas
+                      </span>
+                    )}
+                  </div>
+                  {!ytInfo.hasCaption && (
+                    <div className="text-[11px] text-slate-600 pt-1 space-y-1">
+                      <p className="text-amber-800 font-medium">
+                        💡 O autor desativou as legendas públicas neste vídeo. O Super Aluno gerará o kit de estudos completo com base no tema e conteúdo da aula (<strong>{ytInfo.videoTitle}</strong>).
+                      </p>
+                      <p className="text-slate-500">
+                        Se preferir colar a transcrição exata,{' '}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('text');
+                            setShowYtGuide(true);
+                          }}
+                          className="text-indigo-600 font-bold underline"
+                        >
+                          clique aqui para ver o passo a passo
+                        </button>.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: TEXT & TRANSCRIPTION */}
+          {activeTab === 'text' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Cole a transcrição da aula, anotações do curso ou texto de estudos:
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setShowYtGuide(!showYtGuide)}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  <span>Como pegar a transcrição no YouTube?</span>
+                </button>
+              </div>
+
+              {/* Step by Step YouTube Transcript Guide */}
+              {showYtGuide && (
+                <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 space-y-2 text-xs animate-fadeIn">
+                  <h4 className="font-bold flex items-center gap-2 text-indigo-900">
+                    <Youtube className="w-4 h-4 text-red-600 fill-red-600" />
+                    Como copiar a transcrição do YouTube em 3 passos simples:
+                  </h4>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-700 font-medium pl-1">
+                    <li>Abra o vídeo da aula no site do YouTube (no computador ou celular).</li>
+                    <li>Clique no botão <strong>"... Mais"</strong> ou nos <strong>três pontinhos (...)</strong> logo abaixo do título do vídeo.</li>
+                    <li>Clique na opção <strong>"Mostrar transcrição"</strong> (Show transcript).</li>
+                    <li>Selecione e copie todo o texto da lista e cole no campo de texto abaixo!</li>
+                  </ol>
+                </div>
+              )}
+
+              <textarea
+                rows={7}
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                placeholder="Cole aqui a transcrição da aula (com ou sem marcações de tempo 00:00), anotações do seu curso online (Hotmart, Kiwify, Coursera) ou anotações digitadas..."
+                className="w-full p-4 rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-xs sm:text-sm text-slate-800 placeholder-slate-400 resize-y font-mono leading-relaxed"
+              />
+            </div>
+          )}
+
+          {/* TAB 3: FILE UPLOAD */}
           {activeTab === 'file' && (
             <div
               onDragOver={(e) => e.preventDefault()}
@@ -346,42 +536,26 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                       Arraste e solte o arquivo da aula aqui
                     </p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Suporta Vídeos (MP4/WebM), Áudios (MP3/M4A/WAV), Livros/Aulas em PDF, Imagens de Caderno/Lousa
+                      Suporta Vídeos (MP4/WebM), Áudios de gravações (MP3/M4A), Apostilas em PDF, Fotos de Caderno/Lousa
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
                     <span className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                      <FileVideo className="w-3.5 h-3.5 text-blue-500" /> MP4 / Vídeo
+                      <FileVideo className="w-3.5 h-3.5 text-blue-500" /> Vídeo da Aula (MP4)
                     </span>
                     <span className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                      <FileAudio className="w-3.5 h-3.5 text-purple-500" /> MP3 / Áudio
+                      <FileAudio className="w-3.5 h-3.5 text-purple-500" /> Áudio Gravado (MP3)
                     </span>
                     <span className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                      <FileText className="w-3.5 h-3.5 text-red-500" /> PDF / Apostila
+                      <FileText className="w-3.5 h-3.5 text-red-500" /> Livro / PDF
                     </span>
                     <span className="flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-white px-2.5 py-1 rounded-md border border-slate-200">
-                      <ImageIcon className="w-3.5 h-3.5 text-emerald-500" /> Fotos de Lousa
+                      <ImageIcon className="w-3.5 h-3.5 text-emerald-500" /> Fotos da Lousa
                     </span>
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Text Tab */}
-          {activeTab === 'text' && (
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                Cole a transcrição da gravação ou suas anotações brutas:
-              </label>
-              <textarea
-                rows={6}
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder="Ex: 'Nesta aula de Direito Constitucional abordamos o artigo 5º da CF/88, com foco nos remédios constitucionais...'"
-                className="w-full p-4 rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-sm text-slate-800 placeholder-slate-400 resize-y font-mono"
-              />
             </div>
           )}
 
@@ -391,13 +565,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1">
                 <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-                Título da Matéria / Aula
+                Nome da Matéria / Título da Aula
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Biologia - Respiração Celular"
+                placeholder="Ex: Direito Constitucional - Artigo 5º"
                 className="w-full px-3.5 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-sm text-slate-800"
               />
             </div>
@@ -406,7 +580,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1">
                 <Target className="w-3.5 h-3.5 text-indigo-600" />
-                Foco do Estudo
+                Foco dos Estudos
               </label>
               <select
                 value={target}
@@ -414,8 +588,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 className="w-full px-3.5 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-sm text-slate-800 bg-white"
               >
                 <option value="geral">Geral / Compreensão Ampla</option>
-                <option value="vestibular">Vestibular & ENEM (Foco em pegadinhas)</option>
                 <option value="concurso">Concursos Públicos (Foco na letra da lei)</option>
+                <option value="vestibular">Vestibular & ENEM (Foco em pegadinhas)</option>
                 <option value="faculdade">Faculdade / Prova Teórica</option>
                 <option value="revisao">Revisão Rápida de Véspera</option>
               </select>
@@ -425,7 +599,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1">
                 <BarChart className="w-3.5 h-3.5 text-indigo-600" />
-                Nível de Profundidade
+                Nível do Material
               </label>
               <select
                 value={difficulty}
@@ -448,7 +622,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               type="text"
               value={customInstructions}
               onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="Ex: 'Dar ênfase nas fórmulas matemáticas', 'Focar em jurisdição STF', 'Criar mnemonicos'"
+              placeholder="Ex: 'Focar nos artigos mais cobrados', 'Criar mnemônicos', 'Explicar de forma bem didática'"
               className="w-full px-3.5 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 text-xs text-slate-800"
             />
           </div>
@@ -470,12 +644,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             {isLoading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Processando com Gemini IA...</span>
+                <span>Processando Aula com Gemini IA...</span>
               </>
             ) : (
               <>
                 <Sparkles className="w-4 h-4 text-amber-300 group-hover:rotate-12 transition-transform" />
-                <span>Processar Material & Gerar Conteúdos IA</span>
+                <span>Gerar Kit Completo de Estudos da Aula</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </>
             )}
@@ -494,9 +668,9 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               </div>
 
               <div>
-                <h3 className="text-lg font-bold text-white">Processando com Contexto Massivo</h3>
+                <h3 className="text-lg font-bold text-white">Processando Aula do Aluno</h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  A IA Gemini está sintetizando hours de conteúdo multimodal...
+                  A IA Gemini está analisando o conteúdo e criando resumo, flashcards e simulado...
                 </p>
               </div>
 

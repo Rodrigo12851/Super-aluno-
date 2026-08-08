@@ -1,4 +1,4 @@
-export type FileType = 'video' | 'audio' | 'pdf' | 'text' | 'image';
+export type FileType = 'video' | 'audio' | 'pdf' | 'text' | 'image' | 'youtube';
 
 export type StudyTarget = 'concurso' | 'vestibular' | 'faculdade' | 'revisao' | 'geral';
 
@@ -87,6 +87,7 @@ export interface ProcessStudyRequest {
   fileBase64?: string; // base64 representation if file is uploaded
   mimeType?: string;
   rawText?: string;
+  youtubeUrl?: string;
   target?: StudyTarget;
   difficulty?: StudyDifficulty;
   customInstructions?: string;
