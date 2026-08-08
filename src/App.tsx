@@ -15,7 +15,8 @@ import {
   logoutUser, 
   subscribeToUserStudies, 
   saveStudySessionToFirestore, 
-  deleteStudySessionFromFirestore 
+  deleteStudySessionFromFirestore,
+  loginAnonymously
 } from './lib/firebase';
 import { User } from 'firebase/auth';
 import { Sparkles, ArrowRight, BookOpen, GraduationCap, PlayCircle, Clock, Database } from 'lucide-react';
@@ -24,40 +25,34 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
-  const [sessions, setSessions] = useState<StudySession[]>(() => {
-    try {
-      const saved = localStorage.getItem('super_aluno_sessions');
-      if (saved !== null) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load sessions from localStorage', e);
-    }
-    return [];
-  });
+  const [sessions, setSessions] = useState<StudySession[]>([]);
 
-  const [activeSession, setActiveSession] = useState<StudySession | null>(() => {
-    return sessions.length > 0 ? sessions[0] : null;
-  });
+  const [activeSession, setActiveSession] = useState<StudySession | null>(null);
 
   const [activeTab, setActiveTab] = useState<
     'upload' | 'summary' | 'flashcards' | 'quiz' | 'tutor' | 'plan'
-  >(() => (sessions.length > 0 ? 'summary' : 'upload'));
+  >('upload');
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // Listen for Firebase Auth State
+  // Listen for Firebase Auth State & Auto Anonymous Sign-In
   useEffect(() => {
-    const unsubscribe = onAuthChange((currentUser) => {
-      setUser(currentUser);
+    const unsubscribe = onAuthChange(async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+      } else {
+        try {
+          const anonUser = await loginAnonymously();
+          setUser(anonUser);
+        } catch (anonErr) {
+          console.warn('Anonymous login fallback notice:', anonErr);
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  // Sync with Firestore when user is logged in
+  // Real-time Sync with Firestore database
   useEffect(() => {
     if (!user) return;
 
@@ -69,23 +64,11 @@ export default function App() {
           const matched = remoteSessions.find((s) => s.id === prev.id);
           return matched || remoteSessions[0] || null;
         });
-        if (remoteSessions.length === 0) {
-          setActiveTab('upload');
-        }
       }
     });
 
     return () => unsubscribe();
   }, [user]);
-
-  // Sync to localStorage for local state
-  useEffect(() => {
-    try {
-      localStorage.setItem('super_aluno_sessions', JSON.stringify(sessions));
-    } catch (e) {
-      console.error('Failed to save sessions to localStorage', e);
-    }
-  }, [sessions]);
 
   const handleSessionCreated = async (newSession: StudySession) => {
     const updated = [newSession, ...sessions];

@@ -400,12 +400,12 @@ Por favor, responda estritamente em formato JSON válido contendo a estrutura ab
 }
 
 REGRAS OBRIGATÓRIAS:
-1. Gere pelo menos 4 a 6 Conceitos Chave relevantes.
-2. Gere entre 5 e 8 Flashcards de alta qualidade com perguntas front/back enriquecedoras.
-3. Gere de 3 a 5 Questões de Quiz Múltipla Escolha com 4 opções e explicações detalhadas.
-4. Gere um Plano de Estudos de 5 dias estruturado.
-5. Todo o texto DEVE estar em Português fluente, correto e didático.
-6. Retorne APENAS o JSON puro, sem marcações markdown extra de início ou fim se possível.
+1. AULA COMPLETA: Estruture a seção 'overview', 'keyConcepts' (6 a 10 conceitos) e 'outline' (seções da aula com explicações aprofundadas em tópicos) como se estivesse ministrando uma aula completa do assunto.
+2. MUITOS FLASHCARDS: Gere OBRIGATORIAMENTE ENTRE 12 E 18 FLASHCARDS de alta qualidade com perguntas front/back abrangendo todos os pontos importantes, fórmulas, nomenclaturas e definições do tema.
+3. PROVA / SIMULADO EXTENSO: Gere OBRIGATORIAMENTE ENTRE 8 E 12 QUESTÕES de múltipla escolha (estilo prova de concurso/vestibular) com 4 opções e explicações minuciosas para cada resposta.
+4. PLANO DE ESTUDOS: Gere um Cronograma de Estudos estruturado de 5 a 7 dias.
+5. IDIOMA: Todo o texto DEVE estar estritamente em Português do Brasil fluente, correto, didático e motivador.
+6. FORMATO: Retorne APENAS o JSON puro e válido, sem explicações adicionais fora do JSON.
 `;
 
     contentsParts.push({ text: promptText });
@@ -459,53 +459,109 @@ REGRAS OBRIGATÓRIAS:
       });
     }
 
-    // Assign IDs to concepts, cards, quiz questions
-    if (parsedData.summary?.keyConcepts) {
-      parsedData.summary.keyConcepts = parsedData.summary.keyConcepts.map(
-        (kc: any, idx: number) => ({
-          ...kc,
-          id: `kc-${Date.now()}-${idx}`,
-        })
-      );
-    }
+    // Helper to sanitize and normalize study session payload
+function normalizeStudySessionData(
+  parsedData: any,
+  defaultTitle: string,
+  fileType: string,
+  fileName: string,
+  target: string,
+  difficulty: string,
+  rawText?: string
+) {
+  const summary = parsedData?.summary || {};
+  const normalizedSummary = {
+    title: summary.title || defaultTitle || 'Aula de Estudos',
+    subject: summary.subject || 'Geral / Multidisciplinar',
+    overview: summary.overview || 'Resumo geral dos principais conceitos e objetivos desta aula.',
+    keyConcepts: Array.isArray(summary.keyConcepts)
+      ? summary.keyConcepts.map((kc: any, idx: number) => ({
+          id: kc.id || `kc-${Date.now()}-${idx}`,
+          title: kc.title || `Conceito ${idx + 1}`,
+          description: kc.description || 'Definição e aplicação prática do conceito.',
+          importance: ['alta', 'media', 'normal'].includes(kc.importance) ? kc.importance : 'normal',
+          timestampOrRef: kc.timestampOrRef || 'Tópico principal',
+        }))
+      : [],
+    outline: Array.isArray(summary.outline)
+      ? summary.outline.map((out: any) => ({
+          title: out.title || 'Seção do Conteúdo',
+          keyPoints: Array.isArray(out.keyPoints) ? out.keyPoints : [],
+          timestampOrRef: out.timestampOrRef || '',
+        }))
+      : [],
+    keyQuotes: Array.isArray(summary.keyQuotes) ? summary.keyQuotes : [],
+    examWarnings: Array.isArray(summary.examWarnings) ? summary.examWarnings : [],
+    studyTips: Array.isArray(summary.studyTips) ? summary.studyTips : [],
+  };
 
-    if (parsedData.flashcards) {
-      parsedData.flashcards = parsedData.flashcards.map((fc: any, idx: number) => ({
-        ...fc,
-        id: `fc-${Date.now()}-${idx}`,
+  const flashcards = Array.isArray(parsedData?.flashcards)
+    ? parsedData.flashcards.map((fc: any, idx: number) => ({
+        id: fc.id || `fc-${Date.now()}-${idx}`,
+        front: fc.front || 'Pergunta para revisão',
+        back: fc.back || 'Resposta explicativa',
+        category: fc.category || 'Geral',
+        difficulty: fc.difficulty || 'médio',
+        hint: fc.hint || '',
         status: 'learning',
-      }));
-    }
+      }))
+    : [];
 
-    if (parsedData.quiz) {
-      parsedData.quiz = parsedData.quiz.map((q: any, idx: number) => ({
-        ...q,
-        id: `qz-${Date.now()}-${idx}`,
-      }));
-    }
+  const quiz = Array.isArray(parsedData?.quiz)
+    ? parsedData.quiz.map((q: any, idx: number) => ({
+        id: q.id || `qz-${Date.now()}-${idx}`,
+        question: q.question || 'Pergunta do simulado',
+        options: Array.isArray(q.options) && q.options.length >= 2 ? q.options : ['Opção A', 'Opção B', 'Opção C', 'Opção D'],
+        correctAnswerIndex: typeof q.correctAnswerIndex === 'number' ? q.correctAnswerIndex : 0,
+        explanation: q.explanation || 'Explicação detalhada da alternativa correta.',
+        topic: q.topic || 'Geral',
+      }))
+    : [];
 
-    const sessionData = {
-      id: `session-${Date.now()}`,
-      title: title || parsedData.summary?.title || fileName || 'Sessão de Estudos',
-      createdAt: new Date().toISOString(),
+  const studyPlan = Array.isArray(parsedData?.studyPlan)
+    ? parsedData.studyPlan.map((sp: any, idx: number) => ({
+        day: sp.day || idx + 1,
+        title: sp.title || `Dia ${idx + 1}`,
+        tasks: Array.isArray(sp.tasks) ? sp.tasks : ['Revisar material'],
+        estimatedMinutes: sp.estimatedMinutes || 30,
+        focusArea: sp.focusArea || 'Revisão Ativa',
+      }))
+    : [];
+
+  return {
+    id: `session-${Date.now()}`,
+    title: normalizedSummary.title,
+    createdAt: new Date().toISOString(),
+    fileType: fileType || 'youtube',
+    fileName: fileName || 'Aula do YouTube / Material',
+    target: target || 'geral',
+    difficulty: difficulty || 'medio',
+    summary: normalizedSummary,
+    flashcards,
+    quiz,
+    studyPlan,
+    chatHistory: [
+      {
+        id: `chat-${Date.now()}`,
+        sender: 'ai',
+        text: `Olá! Seu material **"${normalizedSummary.title}"** foi processado com sucesso! Já estruturei o resumo, os flashcards, o quiz simulado e o cronograma de estudos. Como posso te ajudar a revisar esse tema hoje?`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ],
+    contentExcerpt: rawText ? rawText.substring(0, 300) : 'Material multimodal de estudos',
+  };
+}
+
+// Assign IDs to concepts, cards, quiz questions
+    const sessionData = normalizeStudySessionData(
+      parsedData,
+      title || 'Aula de Estudos',
       fileType,
-      fileName: fileName || 'Texto / Entrada Direta',
+      fileName,
       target,
       difficulty,
-      summary: parsedData.summary,
-      flashcards: parsedData.flashcards || [],
-      quiz: parsedData.quiz || [],
-      studyPlan: parsedData.studyPlan || [],
-      chatHistory: [
-        {
-          id: `chat-${Date.now()}`,
-          sender: 'ai',
-          text: `Olá! Seu material **"${title || parsedData.summary?.title || fileName}"** foi processado com sucesso! Já estruturei o resumo, os flashcards, o quiz simulado e o cronograma de estudos. Como posso te ajudar a revisar esse tema hoje?`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ],
-      contentExcerpt: rawText ? rawText.substring(0, 300) : 'Material multimodal processado por IA',
-    };
+      rawText
+    );
 
     return res.json({ success: true, session: sessionData });
   } catch (error: any) {

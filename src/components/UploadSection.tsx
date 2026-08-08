@@ -100,6 +100,9 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         }
       } else {
         setYtInfo(null);
+        if (data && data.error) {
+          setErrorMessage(data.error);
+        }
       }
     } catch (e) {
       console.error('Error fetching YT info:', e);
@@ -404,7 +407,20 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     value={youtubeUrl}
                     onChange={(e) => {
                       setYoutubeUrl(e.target.value);
-                      handleFetchYtInfo(e.target.value);
+                      setErrorMessage(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleFetchYtInfo(youtubeUrl);
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData('text');
+                      if (pasted && pasted.trim()) {
+                        setYoutubeUrl(pasted.trim());
+                        handleFetchYtInfo(pasted.trim());
+                      }
                     }}
                     placeholder="Ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ ou https://youtu.be/..."
                     className="flex-1 px-4 py-3 rounded-xl border border-slate-300 focus:border-red-500 focus:ring-2 focus:ring-red-200 text-sm text-slate-800 outline-none bg-white font-mono"
