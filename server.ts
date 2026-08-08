@@ -322,11 +322,11 @@ REGRAS OBRIGATÓRIAS:
 
     contentsParts.push({ text: promptText });
 
-    // Call Gemini API using gemini-2.5-flash
+    // Call Gemini API using gemini-3.6-flash
     let response;
     try {
       response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents: { parts: contentsParts },
         config: {
           responseMimeType: 'application/json',
@@ -334,9 +334,9 @@ REGRAS OBRIGATÓRIAS:
         },
       });
     } catch (modelErr) {
-      console.warn('Fallback to gemini-2.0-flash due to error:', modelErr);
+      console.warn('Fallback to gemini-flash-latest due to error:', modelErr);
       response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-flash-latest',
         contents: { parts: contentsParts },
         config: {
           responseMimeType: 'application/json',
@@ -465,7 +465,7 @@ ${contextPrompt || 'Material de estudo geral.'}
     let response;
     try {
       response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents: historyParts,
         config: {
           systemInstruction,
@@ -473,9 +473,9 @@ ${contextPrompt || 'Material de estudo geral.'}
         },
       });
     } catch (chatErr) {
-      console.warn('Fallback to gemini-2.0-flash for chat:', chatErr);
+      console.warn('Fallback to gemini-flash-latest for chat:', chatErr);
       response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-flash-latest',
         contents: historyParts,
         config: {
           systemInstruction,
@@ -529,7 +529,7 @@ app.post('/api/tts', async (req, res) => {
     const chosenVoice = validVoices.includes(voice) ? voice : 'Kore';
 
     // Model list to try for TTS audio generation
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-3.1-flash-tts-preview', 'gemini-2.0-flash'];
+    const modelsToTry = ['gemini-3.1-flash-tts-preview', 'gemini-3.6-flash'];
     let lastError: any = null;
     let base64Audio: string | undefined;
     let mimeType: string = 'audio/pcm;rate=24000';

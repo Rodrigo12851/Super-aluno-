@@ -49,13 +49,17 @@ export async function loginWithGoogle() {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     if (result.user) {
-      await setDoc(doc(db, 'users', result.user.uid), {
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName || result.user.email?.split('@')[0],
-        photoURL: result.user.photoURL,
-        lastLoginAt: new Date().toISOString()
-      }, { merge: true });
+      try {
+        await setDoc(doc(db, 'users', result.user.uid), {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName || result.user.email?.split('@')[0],
+          photoURL: result.user.photoURL,
+          lastLoginAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (fsErr) {
+        console.warn('Firestore user profile notice:', fsErr);
+      }
     }
     return result.user;
   } catch (error: any) {
@@ -72,15 +76,23 @@ export async function loginWithEmail(email: string, pass: string) {
 export async function registerWithEmail(email: string, pass: string, name?: string) {
   const result = await createUserWithEmailAndPassword(auth, email, pass);
   if (result.user && name) {
-    await updateProfile(result.user, { displayName: name });
+    try {
+      await updateProfile(result.user, { displayName: name });
+    } catch (profErr) {
+      console.warn('Profile update notice:', profErr);
+    }
   }
   if (result.user) {
-    await setDoc(doc(db, 'users', result.user.uid), {
-      uid: result.user.uid,
-      email: result.user.email,
-      displayName: name || email.split('@')[0],
-      createdAt: new Date().toISOString()
-    }, { merge: true });
+    try {
+      await setDoc(doc(db, 'users', result.user.uid), {
+        uid: result.user.uid,
+        email: result.user.email,
+        displayName: name || email.split('@')[0],
+        createdAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (fsErr) {
+      console.warn('Firestore user profile notice:', fsErr);
+    }
   }
   return result.user;
 }
@@ -88,11 +100,15 @@ export async function registerWithEmail(email: string, pass: string, name?: stri
 export async function loginAnonymously() {
   const result = await signInAnonymously(auth);
   if (result.user) {
-    await setDoc(doc(db, 'users', result.user.uid), {
-      uid: result.user.uid,
-      displayName: 'Aluno Convidado',
-      createdAt: new Date().toISOString()
-    }, { merge: true });
+    try {
+      await setDoc(doc(db, 'users', result.user.uid), {
+        uid: result.user.uid,
+        displayName: 'Aluno Convidado',
+        createdAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (fsErr) {
+      console.warn('Firestore guest profile notice:', fsErr);
+    }
   }
   return result.user;
 }
@@ -120,7 +136,7 @@ export function subscribeToUserStudies(userId: string, onUpdate: (sessions: Stud
 
     onUpdate(sessionsList);
   }, (error) => {
-    console.error('Firestore subscription error:', error);
+    console.warn('Firestore subscription notice (using local storage mode):', error?.message || error);
   });
 }
 
@@ -135,8 +151,7 @@ export async function saveStudySessionToFirestore(userId: string, session: Study
     };
     await setDoc(sessionDocRef, sessionData, { merge: true });
   } catch (error) {
-    console.error('Failed to save study session to Firestore:', error);
-    throw error;
+    console.warn('Firestore save notice (using local storage mode):', error);
   }
 }
 
@@ -146,7 +161,6 @@ export async function deleteStudySessionFromFirestore(userId: string, sessionId:
     const sessionDocRef = doc(db, 'users', userId, 'studies', sessionId);
     await deleteDoc(sessionDocRef);
   } catch (error) {
-    console.error('Failed to delete study session from Firestore:', error);
-    throw error;
+    console.warn('Firestore delete notice (using local storage mode):', error);
   }
 }
