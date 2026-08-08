@@ -147,7 +147,8 @@ async function getYouTubeTranscriptAndInfo(youtubeUrlOrId: string) {
 async function generateContentWithFallback(ai: GoogleGenAI, requestParams: any) {
   const modelsToTry = [
     'gemini-3.6-flash',
-    'gemini-2.0-flash',
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
   ];
   let lastError: any = null;
 
@@ -302,6 +303,18 @@ app.post('/api/process-study', async (req, res) => {
       });
     }
 
+    if (!rawText && !fileBase64) {
+      if (youtubeUrl) {
+        rawText = `AULA DO YOUTUBE:\nURL: ${youtubeUrl}\nTítulo/Tema da Aula: "${title || 'Aula do YouTube'}"\n\nElabore um kit de estudos completo e aprofundado com resumo conceitual, tópicos principais, alertas de prova, flashcards e simulado de questões sobre esta aula/tema.`;
+      } else if (title && title.trim().length > 0) {
+        rawText = `TEMA SOLICITADO PELO ALUNO:\nTítulo/Assunto: "${title.trim()}"\n\nElabore um kit de estudos completo e aprofundado com resumo conceitual, tópicos principais, alertas de prova, flashcards e simulado de questões sobre este assunto.`;
+      } else {
+        return res.status(400).json({
+          error: 'Por favor, insira o link de uma aula do YouTube, digite o título do assunto ou envie um arquivo/texto de estudos.',
+        });
+      }
+    }
+
     if (rawText) {
       contentsParts.push({
         text: `CONTEÚDO TEXTUAL DO MATERIAL DE ESTUDO:\n${rawText}`,
@@ -424,12 +437,18 @@ REGRAS OBRIGATÓRIAS:
     
     let parsedData;
     try {
-      // Clean potential json codeblock wrappers if any
-      const cleanedJson = responseText
+      // Clean potential json codeblock wrappers and slice from first '{' to last '}'
+      let cleanedJson = responseText
         .replace(/^```json\s*/i, '')
         .replace(/^```\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim();
+
+      const firstBrace = cleanedJson.indexOf('{');
+      const lastBrace = cleanedJson.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        cleanedJson = cleanedJson.substring(firstBrace, lastBrace + 1);
+      }
 
       parsedData = JSON.parse(cleanedJson);
     } catch (parseErr) {

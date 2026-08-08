@@ -36,7 +36,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to load sessions from localStorage', e);
     }
-    return SAMPLE_STUDY_SESSIONS;
+    return [];
   });
 
   const [activeSession, setActiveSession] = useState<StudySession | null>(() => {
