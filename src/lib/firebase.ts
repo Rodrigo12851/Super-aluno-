@@ -8,6 +8,7 @@ import {
   signOut, 
   onAuthStateChanged,
   updateProfile,
+  signInAnonymously,
   User 
 } from 'firebase/auth';
 import { 
@@ -78,6 +79,18 @@ export async function registerWithEmail(email: string, pass: string, name?: stri
       uid: result.user.uid,
       email: result.user.email,
       displayName: name || email.split('@')[0],
+      createdAt: new Date().toISOString()
+    }, { merge: true });
+  }
+  return result.user;
+}
+
+export async function loginAnonymously() {
+  const result = await signInAnonymously(auth);
+  if (result.user) {
+    await setDoc(doc(db, 'users', result.user.uid), {
+      uid: result.user.uid,
+      displayName: 'Aluno Convidado',
       createdAt: new Date().toISOString()
     }, { merge: true });
   }
